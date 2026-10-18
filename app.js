@@ -5,8 +5,8 @@
 const CONFIG = {
   SUPABASE_URL: "https://ukekxtuqurnlcatfkzzd.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_3QFboaUTNtpYJcklH02Dog_gmW_A8eS",
-  GEMINI_API_KEY: "AQ.Ab8RN6L1vPhbm4ndV2i2Tbn7J3LSDp8-yJrIX-ksb-K9rfdxMQ",
-  GEMINI_MODEL: "gemini-3.8-flash",
+  GEMINI_API_KEY: "AQ.Ab8RN6Jjy0aO8JEB4AMGlMMVPYt3AjnxknIWohNWifh8DoME-Q",
+  GEMINI_MODEL: "gemini-2.0-flash",
   DEFAULT_CHANNEL: "@alfacomp_uz",
   MAX_HISTORY_TURNS: 20
 };
@@ -842,12 +842,142 @@ function clearMemoryNotes() {
 }
 
 // ============================================================================
-// Voice Input (Speech-to-Text)
+// Voice Input: MediaRecorder → Gemini Audio API (primary) + SpeechRecognition fallback
 // ============================================================================
-function initVoiceInput() {
+let voiceMediaRecorder = null;
+let voiceAudioChunks = [];
+let voiceRecordingActive = false;
+
+async function initVoiceInput() {
+  const btnVoice = document.getElementById("btn-voice");
+
+  // If already recording — STOP
+  if (voiceRecordingActive) {
+    if (voiceMediaRecorder && voiceMediaRecorder.state === "recording") {
+      voiceMediaRecorder.stop();
+    }
+    return;
+  }
+
+  // Try MediaRecorder (best: sends real audio to Gemini)
+  if (navigator.mediaDevices && window.MediaRecorder) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceAudioChunks = [];
+      voiceRecordingActive = true;
+
+      if (btnVoice) {
+        btnVoice.classList.add("voice-recording");
+        btnVoice.title = "Запись... Нажмите еще раз чтобы остановить";
+      }
+      showToast("🎤 Запись... Нажмите кнопку еще раз чтобы отправить");
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/ogg";
+
+      voiceMediaRecorder = new MediaRecorder(stream, { mimeType });
+
+      voiceMediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) voiceAudioChunks.push(e.data);
+      };
+
+      voiceMediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        voiceRecordingActive = false;
+        if (btnVoice) {
+          btnVoice.classList.remove("voice-recording");
+          btnVoice.title = "Голосовой ввод";
+        }
+
+        const blob = new Blob(voiceAudioChunks, { type: mimeType });
+        if (blob.size < 500) {
+          showToast("Запись пустая. Попробуйте ещё раз.");
+          return;
+        }
+
+        // Convert blob to base64
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64Audio = reader.result.split(",")[1];
+          const geminiMime = mimeType.startsWith("audio/webm") ? "audio/webm" : "audio/ogg";
+
+          showToast("🧠 Gemini анализирует ваш голос...");
+          showThinkingIndicator(false);
+
+          try {
+            isGenerating = true;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.GEMINI_MODEL}:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+
+            const systemText = `Ты — персональный ИИ-ассистент AlfaComp.
+ДАННЫЕ О ПОЛЬЗОВАТЕЛЕ: Имя: ${currentUser.name || 'Пользователь'}. ${currentUser.about ? 'О себе: ' + currentUser.about : ''}
+Пользователь отправил ГОЛОСОВОЕ СООБЩЕНИЕ.
+Сначала напиши на отдельной строке: 🎤 Вы сказали: "расшифровка"
+Затем дай полный, развёрнутый ответ.
+${currentUser.instructions ? 'Персональные пожелания: ' + currentUser.instructions : ''}`;
+
+            // Build history + audio message
+            const contents = [];
+            const recentTurns = chatHistory.slice(-CONFIG.MAX_HISTORY_TURNS);
+            for (const item of recentTurns) {
+              contents.push({ role: item.role === "user" ? "user" : "model", parts: [{ text: item.content }] });
+            }
+            contents.push({
+              role: "user",
+              parts: [
+                { inline_data: { mime_type: geminiMime, data: base64Audio } },
+                { text: "Расшифруй голосовое сообщение и ответь." }
+              ]
+            });
+
+            const bodyPayload = {
+              systemInstruction: { parts: [{ text: systemText }] },
+              contents,
+              generationConfig: { temperature: 0.7, maxOutputTokens: 8192 }
+            };
+
+            const response = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(bodyPayload)
+            });
+            const data = await response.json();
+            hideThinkingIndicator();
+
+            if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+              const aiText = data.candidates[0].content.parts[0].text;
+              appendMessageUI("user", "[🎤 Голосовое сообщение]", true);
+              await appendMessageToHistory("user", "[Голосовое сообщение]");
+              appendMessageUI("model", aiText, true);
+              await appendMessageToHistory("model", aiText);
+            } else if (data.error) {
+              throw new Error(data.error.message);
+            } else {
+              hideThinkingIndicator();
+              showToast("Не удалось распознать голос. Попробуйте ещё раз.");
+            }
+          } catch (err) {
+            hideThinkingIndicator();
+            appendMessageUI("model", `⚠️ Ошибка распознавания голоса: ${err.message || err}`, true);
+          } finally {
+            isGenerating = false;
+          }
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      voiceMediaRecorder.start(500); // collect data every 500ms
+      return;
+    } catch (err) {
+      // Microphone access denied or not available — fall through to SpeechRecognition
+      console.warn("MediaRecorder failed, trying SpeechRecognition:", err);
+    }
+  }
+
+  // Fallback: SpeechRecognition (Chrome/Edge, transcribes to text only)
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    showToast("Голосовой ввод не поддерживается данным браузером.");
+    showToast("Нет доступа к микрофону и голосовой ввод не поддерживается браузером.");
     return;
   }
 
@@ -855,10 +985,8 @@ function initVoiceInput() {
   recognition.lang = "ru-RU";
   recognition.interimResults = false;
 
-  const btnVoice = document.getElementById("btn-voice");
   if (btnVoice) btnVoice.classList.add("voice-recording");
-
-  showToast("Слушаю вас... Говорите!");
+  showToast("🎤 Слушаю... Говорите!");
 
   recognition.onresult = (event) => {
     const transcript = event.results[0][0].transcript;
@@ -866,6 +994,7 @@ function initVoiceInput() {
     if (input) {
       input.value = (input.value ? input.value + " " : "") + transcript;
     }
+    showToast(`💬 Распознано: "${transcript}"`);
   };
 
   recognition.onerror = () => {
@@ -874,8 +1003,10 @@ function initVoiceInput() {
 
   recognition.onend = () => {
     if (btnVoice) btnVoice.classList.remove("voice-recording");
+    voiceRecordingActive = false;
   };
 
+  voiceRecordingActive = true;
   recognition.start();
 }
 
