@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>AlfaComp AI — Персональный ИИ-Ассистент</title>
+  <meta name="description" content="Интеллектуальный персональный ИИ-ассистент с поддержкой LaTeX-формул, предпросмотром кода, памятью и интеграцией с Telegram.">
+  <meta name="theme-color" content="#090d16">
+
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- Google Fonts: Outfit & Inter & Fira Code -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- KaTeX for LaTeX Math Formulas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+  <!-- Marked for Markdown Parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Background Glow & Particles Canvas -->
+  <canvas id="bg-canvas"></canvas>
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <!-- App Wrapper -->
+  <div id="app" class="app-layout">
+    
+    <!-- Top Header Bar -->
+    <header class="app-header">
+      <div class="header-left">
+        <button id="btn-toggle-sidebar" class="icon-btn" title="Меню">
+          <i data-lucide="menu"></i>
+        </button>
+        <div class="brand">
+          <div class="brand-avatar">
+            <span class="avatar-pulse"></span>
+            <i data-lucide="sparkles"></i>
+          </div>
+          <div class="brand-meta">
+            <div class="brand-title-row">
+              <h1 class="brand-name">AlfaComp AI</h1>
+              <span class="badge-pro">PRO 3.8</span>
+            </div>
+            <div class="brand-status">
+              <span class="status-dot"></span>
+              <span id="ai-status-text">Готов к общению • Память активна</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-center" id="channel-header-badge">
+        <a id="channel-link-btn" href="https://t.me/alfacomp_uz" target="_blank" class="channel-pill" title="Подключенный Telegram-канал">
+          <i data-lucide="send"></i>
+          <span id="header-channel-name">Канал: @alfacomp_uz</span>
+          <i data-lucide="external-link" class="icon-sm"></i>
+        </a>
+      </div>
+
+      <div class="header-right">
+        <button id="btn-new-chat" class="btn-action-glass" title="Начать новый диалог с сохранением памяти">
+          <i data-lucide="plus-circle"></i>
+          <span>Новый чат</span>
+        </button>
+        <button id="btn-open-settings" class="icon-btn" title="Настройки чата и данные">
+          <i data-lucide="settings"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Container: Chat + Quick Actions -->
+    <main class="main-content">
+      
+      <!-- Welcome Hero Banner (Hidden once chat starts) -->
+      <section id="welcome-hero" class="welcome-hero">
+        <div class="hero-badge">
+          <i data-lucide="brain"></i>
+          <span>Персональный ИИ-Ассистент с памятью</span>
+        </div>
+        <h2 class="hero-title">
+          Чем могу помочь, <span id="user-greeting-name" class="gradient-text">друг</span>?
+        </h2>
+        <p class="hero-subtitle">
+          Я запоминаю всё о вас и ваших проектах. Решаю математику с визуализацией формул, генерирую код с мгновенным предпросмотром сайтов и создаю реалистичные фото.
+        </p>
+
+        <!-- Quick Prompt Chips -->
+        <div class="quick-chips">
+          <button class="chip" data-prompt="Реши математический пример с дробями, корнями и степенями: \int_{0}^{\pi} x \cdot \sin(x^2) dx">
+            <i data-lucide="sigma"></i>
+            <span>📐 Математика с LaTeX</span>
+          </button>
+          <button class="chip" data-prompt="Создай интерактивный современный лендинг с красивыми кнопками и анимацией на HTML, CSS и JS">
+            <i data-lucide="code"></i>
+            <span>💻 Сайт с предпросмотром</span>
+          </button>
+          <button class="chip" data-prompt="Сгенерируй реалистичное фото современного ночного Ташкента с неоновой подсветкой">
+            <i data-lucide="camera"></i>
+            <span>📸 Реалистичное фото</span>
+          </button>
+          <button class="chip" data-prompt="Напиши вовлекающий пост для нашего Telegram-канала с опросом для подписчиков">
+            <i data-lucide="megaphone"></i>
+            <span>📢 Пост для канала</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Chat Messages Container -->
+      <div id="chat-messages" class="chat-messages">
+        <!-- Messages will be dynamically rendered here -->
+      </div>
+
+      <!-- Thinking Indicator (animated stages) -->
+      <div id="thinking-indicator" class="thinking-wrapper hidden">
+        <div class="thinking-box">
+          <div class="thinking-spinner">
+            <div class="spinner-ring"></div>
+            <i data-lucide="cpu" class="thinking-icon"></i>
+          </div>
+          <div class="thinking-content">
+            <div class="thinking-title" id="thinking-stage-title">ИИ глубоко размышляет над ответом...</div>
+            <div class="thinking-sub" id="thinking-stage-sub">Проверяем математическую строгость и точность деталей (1-2 минуты)</div>
+            <div class="thinking-progress-bar">
+              <div class="progress-fill"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Bottom Input Area -->
+    <footer class="app-footer">
+      <div class="input-card">
+        <!-- Attachment preview (if photo attached) -->
+        <div id="attachment-preview-container" class="attachment-preview hidden">
+          <div class="preview-thumb">
+            <img id="preview-img" src="" alt="Предпросмотр">
+            <button id="btn-remove-attachment" class="btn-remove-img" title="Удалить фото">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="preview-info">
+            <span class="preview-label">Фото прикреплено для анализа Gemini Vision</span>
+            <span class="preview-hint">Глубокий анализ займет 2-4 минуты</span>
+          </div>
+        </div>
+
+        <div class="input-row">
+          <!-- Attach Photo Button -->
+          <label for="file-input" class="icon-btn tool-btn" title="Прикрепить фото для анализа">
+            <i data-lucide="image"></i>
+            <input type="file" id="file-input" accept="image/*" style="display:none;">
+          </label>
+
+          <!-- Voice Input Button (Speech-to-text) -->
+          <button id="btn-voice" class="icon-btn tool-btn" title="Голосовой ввод">
+            <i data-lucide="mic"></i>
+          </button>
+
+          <!-- Text Input Area -->
+          <textarea 
+            id="chat-input" 
+            placeholder="Спросите о чем угодно, отправьте математику, код или задачу..." 
+            rows="1"
+            maxlength="8000"
+          ></textarea>
+
+          <!-- Send Button -->
+          <button id="btn-send" class="btn-send" title="Отправить сообщение">
+            <i data-lucide="arrow-up"></i>
+          </button>
+        </div>
+
+        <!-- Input Footer Info -->
+        <div class="input-meta-bar">
+          <div class="meta-left">
+            <span class="mode-tag"><i data-lucide="sparkle" class="icon-xs"></i> Gemini 3.8 Pro</span>
+            <span class="mode-tag math-tag"><i data-lucide="calculator" class="icon-xs"></i> LaTeX $...$</span>
+            <span class="mode-tag code-tag"><i data-lucide="play" class="icon-xs"></i> Live Preview</span>
+          </div>
+          <div class="meta-right">
+            <span id="char-counter">0 / 8000</span>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL 1: Live Web Preview (iFrame sandbox for HTML/CSS/JS) -->
+  <!-- ========================================================================= -->
+  <div id="preview-modal" class="modal-overlay hidden">
+    <div class="modal-window preview-modal-window">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="badge-live-dot"></div>
+          <h3 class="modal-title">Интерактивный предпросмотр сайта</h3>
+          <span class="badge-sandbox">Sandboxed iFrame</span>
+        </div>
+        <div class="modal-actions">
+          <button id="btn-preview-refresh" class="icon-btn-sm" title="Перезагрузить">
+            <i data-lucide="rotate-cw"></i>
+          </button>
+          <button id="btn-preview-open-tab" class="icon-btn-sm" title="Открыть в новой вкладке">
+            <i data-lucide="external-link"></i>
+          </button>
+          <button id="btn-preview-close" class="icon-btn-sm" title="Закрыть">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+      </div>
+      <div class="preview-body">
+        <iframe id="preview-iframe" sandbox="allow-scripts allow-modals" src="about:blank"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL 2: Settings & Long-Term Memory (Настройки чата) -->
+  <!-- ========================================================================= -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal-window settings-modal-window">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <i data-lucide="sliders" class="text-indigo"></i>
+          <h3 class="modal-title">Настройки чата и Персональные данные</h3>
+        </div>
+        <button id="btn-settings-close" class="icon-btn-sm" title="Закрыть">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="modal-body-scroll">
+        
+        <!-- Tab navigation in settings -->
+        <div class="settings-tabs">
+          <button class="settings-tab-btn active" data-tab="tab-profile">
+            <i data-lucide="user"></i>
+            <span>О пользователе</span>
+          </button>
+          <button class="settings-tab-btn" data-tab="tab-memory">
+            <i data-lucide="hard-drive"></i>
+            <span>Память ИИ</span>
+          </button>
+          <button class="settings-tab-btn" data-tab="tab-channel">
+            <i data-lucide="radio"></i>
+            <span>Telegram Канал</span>
+          </button>
+          <button class="settings-tab-btn" data-tab="tab-ai-params">
+            <i data-lucide="cpu"></i>
+            <span>Режим ответов</span>
+          </button>
+        </div>
+
+        <!-- TAB 1: Profile & Custom Suggestions -->
+        <div id="tab-profile" class="tab-pane active">
+          <div class="form-group">
+            <label for="input-user-name">Как к вам обращаться (Имя / Никнейм):</label>
+            <input type="text" id="input-user-name" placeholder="Например: Азиз или @username" class="form-control">
+            <small class="form-hint">ИИ будет обращаться к вам по этому имени даже в новых диалогах.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="input-user-about">О вас (род деятельности, сфера, контекст):</label>
+            <textarea id="input-user-about" rows="3" class="form-control" placeholder="Например: Владелец IT-канала AlfaComp, программирую на Python и JS, изучаю высшую математику и физику..."></textarea>
+            <small class="form-hint">ИИ учитывает это, чтобы давать узкоспециализированные и точные ответы.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="input-user-instructions">Ваши пожелания и персональные инструкции для ИИ:</label>
+            <textarea id="input-user-instructions" rows="4" class="form-control" placeholder="Например: Отвечай без роботизированных шаблонных фраз, формулы оформляй строго в LaTeX, для кода пиши готовые рабочие файлы..."></textarea>
+            <small class="form-hint">Эти правила действуют для всех сообщений в чате и Telegram.</small>
+          </div>
+        </div>
+
+        <!-- TAB 2: Long-Term Memory (ИИ помнит всё даже в новом чате) -->
+        <div id="tab-memory" class="tab-pane">
+          <div class="memory-card">
+            <div class="memory-card-header">
+              <div class="memory-status">
+                <i data-lucide="shield-check" class="text-green"></i>
+                <span>Долговременная память синхронизирована</span>
+              </div>
+              <button id="btn-clear-memory" class="btn-danger-sm" title="Очистить память">
+                <i data-lucide="trash-2"></i> Очистить
+              </button>
+            </div>
+            <p class="memory-desc">
+              ИИ непрерывно сохраняет ключевые факты о вас, ваших предпочтениях и прошлых беседах. Даже когда вы нажимаете <b>«Новый чат»</b>, эти знания сохраняются!
+            </p>
+            <div class="form-group">
+              <label for="input-memory-notes">Факты и знания, зафиксированные в памяти:</label>
+              <textarea id="input-memory-notes" rows="6" class="form-control" placeholder="Здесь отображаются зафиксированные факты о вас..."></textarea>
+              <small class="form-hint">Вы можете вручную добавить или отредактировать любые факты о себе.</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: Telegram Channel Connection -->
+        <div id="tab-channel" class="tab-pane">
+          <div class="form-group">
+            <label for="input-channel-username">Подключенный Telegram-канал (ссылка или @username):</label>
+            <div class="input-with-button">
+              <input type="text" id="input-channel-username" placeholder="@alfacomp_uz" class="form-control" value="@alfacomp_uz">
+              <button id="btn-test-channel" class="btn-action-glass">
+                <i data-lucide="check-circle"></i> Проверить
+              </button>
+            </div>
+            <small class="form-hint">ИИ сможет генерировать готовые публикации и учитывать аудиторию канала.</small>
+          </div>
+
+          <div class="channel-preview-card" id="channel-preview-card">
+            <div class="channel-card-avatar">
+              <i data-lucide="send"></i>
+            </div>
+            <div class="channel-card-info">
+              <h4 id="channel-card-title">AlfaComp Channel</h4>
+              <p id="channel-card-desc">Официальный Telegram-канал с обновлениями и полезными материалами</p>
+              <span class="channel-card-link" id="channel-card-link-text">t.me/alfacomp_uz</span>
+            </div>
+          </div>
+
+          <div class="channel-actions-row">
+            <button id="btn-gen-channel-post" class="btn-action-glass flex-1">
+              <i data-lucide="file-text"></i> Сгенерировать пост для канала
+            </button>
+            <a href="https://t.me/alfacomp_uz" target="_blank" class="btn-action-glass" id="btn-visit-channel">
+              <i data-lucide="external-link"></i> Перейти
+            </a>
+          </div>
+        </div>
+
+        <!-- TAB 4: AI Response Settings (1-2 мин для точности, математика, стиль) -->
+        <div id="tab-ai-params" class="tab-pane">
+          <div class="toggle-option">
+            <div class="toggle-text">
+              <span class="toggle-title">Режим глубокого размышления (1–2 минуты)</span>
+              <span class="toggle-desc">Дает ИИ время тщательно продумать решение, перепроверить математику и выдать максимально полный и подробный ответ без спешки.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-deep-thinking" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="toggle-option">
+            <div class="toggle-text">
+              <span class="toggle-title">Автоматический LaTeX-рендеринг формул</span>
+              <span class="toggle-desc">Отображать степени $x^2$, дроби $\frac{a}{b}$, корни $\sqrt{x}$, пределы $\lim_{x \to 0}$ и интегралы в красивом математическом виде.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-latex-rendering" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="toggle-option">
+            <div class="toggle-text">
+              <span class="toggle-title">Человечный стиль без роботизированных штампов</span>
+              <span class="toggle-desc">ИИ общается как живой квалифицированный специалист, без фраз «Как языковая модель...».</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-human-style" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button id="btn-save-settings" class="btn-primary">
+          <i data-lucide="save"></i> Сохранить настройки
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="app.js"></script>
+</body>
+</html>
